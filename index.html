@@ -4724,12 +4724,19 @@ function togglePeriod(dateStr) {
 function getPeriodStartDates() {
     if (!SYS_CONF.periodDates || SYS_CONF.periodDates.length === 0) return [];
 
-    const sorted = [...SYS_CONF.periodDates].sort();
-    const starts = [];
+    const sorted =[...SYS_CONF.periodDates].sort();
+    const starts =[];
 
     for (let i = 0; i < sorted.length; i++) {
-        const current = new Date(sorted[i]);
-        const prev = i > 0 ? new Date(sorted[i - 1]) : null;
+        // 修复时区偏差问题：直接拆分年月日
+        let [y1, m1, d1] = sorted[i].split('-').map(Number);
+        const current = new Date(y1, m1 - 1, d1);
+        
+        let prev = null;
+        if (i > 0) {
+            let[y2, m2, d2] = sorted[i - 1].split('-').map(Number);
+            prev = new Date(y2, m2 - 1, d2);
+        }
 
         if (!prev) {
             starts.push(sorted[i]);
@@ -4756,21 +4763,53 @@ function updatePeriodInfo() {
     today.setHours(0,0,0,0);
     const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
-    if (SYS_CONF.periodDates.includes(todayStr)) {
-        label.innerText = "当前状态";
-        daysEl.innerText = "经期中";
-        return;
+    const sortedDates = [...SYS_CONF.periodDates].sort();
+    let isPeriodToday = SYS_CONF.periodDates.includes(todayStr);
+    
+    // 获取最近一次打卡日期
+    let lastMarkedStr = sortedDates[sortedDates.length - 1];
+    let[ly, lm, ld] = lastMarkedStr.split('-').map(Number);
+    let lastMarkedDate = new Date(ly, lm - 1, ld);
+    lastMarkedDate.setHours(0,0,0,0);
+    
+    let daysSinceLastMarked = Math.round((today - lastMarkedDate) / 86400000);
+    
+    // 【核心升级】：如果今天已打卡，或者最后一次打卡在7天内（很多女生只记第一天，假定经期未结束）
+    if (isPeriodToday || (daysSinceLastMarked > 0 && daysSinceLastMarked <= 7)) {
+        let current = new Date(lastMarkedDate);
+        // 往前找，看这次经期是从哪天开始的
+        while (true) {
+            current.setDate(current.getDate() - 1);
+            let prevStr = `${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
+            if (!SYS_CONF.periodDates.includes(prevStr)) break;
+        }
+        current.setDate(current.getDate() + 1); // 回到起始日
+        
+        // 计算今天是本次经期的第几天
+        let dayIndex = Math.round((today - current) / 86400000) + 1;
+        
+        // 确保不会无限推算，最大认定连续7天
+        if (dayIndex <= 7 || isPeriodToday) {
+            label.innerText = "当前状态";
+            daysEl.innerText = `经期 第 ${dayIndex} 天`;
+            daysEl.style.color = "#ff4d88"; // 变红更好看
+            return;
+        }
     }
 
+    // --- 如果不在经期中，计算距离下一次还有几天 ---
     const startDates = getPeriodStartDates();
     const latestStartStr = startDates[startDates.length - 1];
-    const latestStart = new Date(latestStartStr);
+    let [sy, sm, sd] = latestStartStr.split('-').map(Number);
+    const latestStart = new Date(sy, sm - 1, sd);
+    latestStart.setHours(0,0,0,0);
 
     const predictedNext = new Date(latestStart);
     predictedNext.setDate(predictedNext.getDate() + 28);
 
-    const diffDays = Math.ceil((predictedNext - today) / 86400000);
+    const diffDays = Math.round((predictedNext - today) / 86400000);
 
+    daysEl.style.color = "var(--primary)"; // 恢复默认色
     if (diffDays > 0) {
         label.innerText = "距离下一次大约还有";
         daysEl.innerText = `${diffDays} 天`;
@@ -4780,6 +4819,7 @@ function updatePeriodInfo() {
     } else {
         label.innerText = "可能推迟了";
         daysEl.innerText = `${Math.abs(diffDays)} 天`;
+        daysEl.style.color = "#ff4d88";
     }
 }
 
