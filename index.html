@@ -1,14 +1,22 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#c89b3c">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="./icon.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>专属梦女机  - 江晦</title>
+    <title>专属梦女机 - 江晦</title>
+    
+    <!-- 1. 关联你的 manifest.json -->
+    <link rel="manifest" href="./manifest.json">
+    
+    <!-- 2. 苹果 iOS 全屏魔法标签 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="江晦">
+    
+    <!-- 3. 桌面图标指向 -->
+    <link rel="apple-touch-icon" href="./icon.png">
+    
+    <!-- 下面继续写你原来的 <style> 等等... -->
     <style>
         /* ================= 基础重置与全屏无缝布局 ================= */
         :root {
@@ -6007,14 +6015,15 @@ async function importBackupFromFileInput(e) {
     </div>
 </div>
 
+<!-- 把 index.html 最底部的 script 换成这段用来清退缓存的代码 -->
 <script>
+    // 强行卸载所有旧的 Service Worker，恢复正常刷新逻辑
     if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-            navigator.serviceWorker.register('./sw.js').then(function(registration) {
-                console.log('ServiceWorker 注册成功:', registration.scope);
-            }).catch(function(err) {
-                console.log('ServiceWorker 注册失败:', err);
-            });
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for(let registration of registrations) {
+                registration.unregister();
+                console.log('旧的缓存机制已强行卸载');
+            }
         });
     }
 </script>
