@@ -1,7 +1,7 @@
 {
   "name": "专属梦女机 - 江晦",
   "short_name": "江晦",
-  "start_url": "./",
+  "start_url": "./index.html",
   "display": "standalone",
   "theme_color": "#c89b3c",
   "background_color": "#120f0e",
