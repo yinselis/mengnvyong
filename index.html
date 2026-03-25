@@ -1982,6 +1982,10 @@ color:#1b140f;"></textarea>
                         <input type="date" id="period-end" style="flex:1; margin:0; padding:8px;">
                     </div>
                     <button class="btn-main" style="padding:10px; background:#ff4d88; font-size:14px; box-shadow:none;" onclick="addPeriodRange()">💾 保存这段经期</button>
+                    <div style="display:flex; gap:10px; margin-top:10px;">
+    <button class="btn-outline" style="flex:1; border-color:#ff4d88; color:#ff4d88;" onclick="endCurrentPeriodToday()">✅ 今天结束经期</button>
+    <button class="btn-outline" style="flex:1;" onclick="clearCurrentPeriodManualEnd()">↩ 恢复自动</button>
+</div>
                 </div>
 
                 <div class="cal-header"><button class="cal-btn" onclick="changeMonth(-1)">◀</button><span id="cal-month-year">...</span><button class="cal-btn" onclick="changeMonth(1)">▶</button></div>
@@ -2442,15 +2446,15 @@ req.onupgradeneeded = e => {
     periodDates: [], 
     darkMode: false,
     theme: 'pink',
-metaAware: false,
-autoAIGen: true,
-anniversaryDate: '',
+    metaAware: false,
+    autoAIGen: true,
+    anniversaryDate: '',
     hairWashes: [],
     poops: [],
     weights: {},
-    meals: {}
+    meals: {},
+    periodManualEndByStart: {} // 新增：按“经期开头日期”记录手动结束日期
 };
-
     let CARD_CONF = {
         minDelay: 2,
         maxDelay: 5,
@@ -2531,7 +2535,7 @@ const BUILTIN_APPEARANCE_IDS = ['ap_hk_gold', 'ap_neon_night', 'ap_matcha'];
         const savedConf = await AppDB.get('sys', 'config');
         if (savedConf) SYS_CONF = { ...SYS_CONF, ...savedConf };
         if (!SYS_CONF.periodDates) SYS_CONF.periodDates =[];
-
+if (!SYS_CONF.periodManualEndByStart) SYS_CONF.periodManualEndByStart = {};
         document.getElementById('setting-dark-mode').checked = !!SYS_CONF.darkMode;
 document.getElementById('setting-meta-aware').checked = !!SYS_CONF.metaAware;
 document.getElementById('setting-auto-ai-gen').checked = SYS_CONF.autoAIGen !== false;
@@ -4647,17 +4651,21 @@ function addPeriodRange() {
     const s = document.getElementById('period-start').value;
     const e = document.getElementById('period-end').value;
     if(!s || !e) return alert("请选择完整的起始和结束日期哦~");
-    let curr = new Date(s); 
+
+    let curr = new Date(s);
     let end = new Date(e);
     if(curr > end) return alert("开始日期不能晚于结束日期！");
+
     while(curr <= end) {
         const dateStr = `${curr.getFullYear()}-${String(curr.getMonth()+1).padStart(2,'0')}-${String(curr.getDate()).padStart(2,'0')}`;
         if(!SYS_CONF.periodDates.includes(dateStr)) SYS_CONF.periodDates.push(dateStr);
         curr.setDate(curr.getDate() + 1);
     }
-    AppDB.set('sys', 'config', SYS_CONF); 
-    initCalendar(); 
-    updatePeriodInfo(); 
+
+    AppDB.set('sys', 'config', SYS_CONF);
+    initCalendar();
+    updatePeriodInfo();
+    renderMinusDashboard(); // G步骤新增：补录后立刻刷新负一屏
     alert("录入成功！");
 }
 
@@ -4676,7 +4684,7 @@ function renderCalendar(y, m) {
     const startDates = getPeriodStartDates();
 
     if (startDates.length > 0) {
-        const latestStart = new Date(startDates[startDates.length - 1]);
+        const latestStart = parseDateLocal(startDates[startDates.length - 1]);
         latestStart.setDate(latestStart.getDate() + 28);
 
         for (let i = 0; i < 5; i++) {
@@ -4692,7 +4700,9 @@ function renderCalendar(y, m) {
 
     for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-        const isPeriod = SYS_CONF.periodDates.includes(dateStr);
+
+        // 统一走新逻辑（含手动结束）
+        const isPeriod = isDateInPeriod(dateStr);
         const isPredict = predictedDates.includes(dateStr) && !isPeriod;
 
         const hasHair = SYS_CONF.hairWashes && SYS_CONF.hairWashes.includes(dateStr);
@@ -4723,6 +4733,7 @@ function togglePeriod(dateStr) {
     AppDB.set('sys', 'config', SYS_CONF);
     initCalendar();
     updatePeriodInfo();
+    renderMinusDashboard(); // G步骤新增：手动切换后立刻刷新负一屏
 
     if (selectedDateStr === dateStr) {
         updateDailyModalUI();
@@ -4757,67 +4768,197 @@ function getPeriodStartDates() {
     return starts;
 }
 
+function parseDateLocal(dateStr) {
+    const [y, m, d] = String(dateStr).split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+}
+
+function formatDateLocal(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function getLatestPeriodStartStr() {
+    const starts = getPeriodStartDates();
+    if (!starts.length) return '';
+    return starts[starts.length - 1];
+}
+
+/**
+ * 自动结束日（默认7天）
+ */
+function getAutoPeriodEndByStart(startStr) {
+    const start = parseDateLocal(startStr);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6); // 第1~7天
+    return end;
+}
+
+/**
+ * 取本次经期真实结束日：
+ * 有手动结束 -> 用手动结束
+ * 否则 -> 用自动7天结束
+ */
+function getRealPeriodEndByStart(startStr) {
+    const autoEnd = getAutoPeriodEndByStart(startStr);
+    const manualStr = SYS_CONF.periodManualEndByStart?.[startStr];
+    if (!manualStr) return autoEnd;
+
+    const manualEnd = parseDateLocal(manualStr);
+    // 防止手动结束早于开始日
+    const start = parseDateLocal(startStr);
+    if (manualEnd < start) return autoEnd;
+    return manualEnd;
+}
+
+/**
+ * 是否处于“本次经期”
+ * 这里只对“最近一次经期开头”做自动推断
+ */
+function isDateInPeriod(dateStr) {
+    // 用户手动点过的日期，永远算经期
+    if (SYS_CONF.periodDates?.includes(dateStr)) return true;
+
+    const startStr = getLatestPeriodStartStr();
+    if (!startStr) return false;
+
+    const start = parseDateLocal(startStr);
+    const target = parseDateLocal(dateStr);
+    const end = getRealPeriodEndByStart(startStr);
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    // 不自动染未来日期
+    if (target > today) return false;
+    return target >= start && target <= end;
+}
+
+/**
+ * 返回某天是“经期第几天”
+ */
+function getPeriodDayIndexByDate(dateStr) {
+    if (!isDateInPeriod(dateStr)) return 0;
+
+    const startStr = getLatestPeriodStartStr();
+    if (!startStr) return 0;
+
+    const start = parseDateLocal(startStr);
+    const target = parseDateLocal(dateStr);
+
+    const diff = Math.round((target - start) / 86400000);
+    return diff + 1;
+}
+
+/**
+ * 手动结束本次经期（记今天为结束日）
+ */
+async function endCurrentPeriodToday() {
+    const startStr = getLatestPeriodStartStr();
+    if (!startStr) return alert('还没有经期开头记录，先标记第一天哦');
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const todayStr = formatDateLocal(today);
+
+    SYS_CONF.periodManualEndByStart[startStr] = todayStr;
+    await AppDB.set('sys', 'config', SYS_CONF);
+
+    initCalendar();
+    updatePeriodInfo();
+    renderMinusDashboard();
+    alert(`已手动结束本次经期（结束日：${todayStr}）`);
+}
+
+/**
+ * 取消手动结束（恢复自动7天推断）
+ */
+async function clearCurrentPeriodManualEnd() {
+    const startStr = getLatestPeriodStartStr();
+    if (!startStr) return;
+
+    if (SYS_CONF.periodManualEndByStart?.[startStr]) {
+        delete SYS_CONF.periodManualEndByStart[startStr];
+        await AppDB.set('sys', 'config', SYS_CONF);
+        initCalendar();
+        updatePeriodInfo();
+        renderMinusDashboard();
+        alert('已恢复自动推断');
+    }
+}
+
+function parseDateLocal(dateStr) {
+    const [y, m, d] = String(dateStr).split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setHours(0, 0, 0, 0);
+    return dt;
+}
+
+/**
+ * 判断某天是否算“经期中”
+ * 规则：
+ * 1) 手动标记过的日期一定算
+ * 2) 以最近一次经期开头为基准，自动推断连续 7 天
+ * 3) 只自动推断到“今天”，不把未来日期提前染红
+ */
+function isDateInPeriod(dateStr) {
+    if (SYS_CONF.periodDates && SYS_CONF.periodDates.includes(dateStr)) return true;
+
+    const starts = getPeriodStartDates();
+    if (!starts.length) return false;
+
+    const latestStart = parseDateLocal(starts[starts.length - 1]);
+    const target = parseDateLocal(dateStr);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const autoEnd = new Date(latestStart);
+    autoEnd.setDate(autoEnd.getDate() + 6); // 连续7天：start + 0~6
+
+    if (target > today) return false; // 未来不自动染红
+    return target >= latestStart && target <= autoEnd;
+}
+
 function updatePeriodInfo() {
     const label = document.getElementById('period-status-label');
     const daysEl = document.getElementById('period-days-left');
+    if (!label || !daysEl) return;
 
     if (!SYS_CONF.periodDates || SYS_CONF.periodDates.length === 0) {
         label.innerText = "还没有记录";
         daysEl.innerText = "-- 天";
+        daysEl.style.color = "var(--primary)";
         return;
     }
 
     const today = new Date();
     today.setHours(0,0,0,0);
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const todayStr = formatDateLocal(today);
 
-    const sortedDates = [...SYS_CONF.periodDates].sort();
-    let isPeriodToday = SYS_CONF.periodDates.includes(todayStr);
-    
-    // 获取最近一次打卡日期
-    let lastMarkedStr = sortedDates[sortedDates.length - 1];
-    let[ly, lm, ld] = lastMarkedStr.split('-').map(Number);
-    let lastMarkedDate = new Date(ly, lm - 1, ld);
-    lastMarkedDate.setHours(0,0,0,0);
-    
-    let daysSinceLastMarked = Math.round((today - lastMarkedDate) / 86400000);
-    
-    // 【核心升级】：如果今天已打卡，或者最后一次打卡在7天内（很多女生只记第一天，假定经期未结束）
-    if (isPeriodToday || (daysSinceLastMarked > 0 && daysSinceLastMarked <= 7)) {
-        let current = new Date(lastMarkedDate);
-        // 往前找，看这次经期是从哪天开始的
-        while (true) {
-            current.setDate(current.getDate() - 1);
-            let prevStr = `${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
-            if (!SYS_CONF.periodDates.includes(prevStr)) break;
-        }
-        current.setDate(current.getDate() + 1); // 回到起始日
-        
-        // 计算今天是本次经期的第几天
-        let dayIndex = Math.round((today - current) / 86400000) + 1;
-        
-        // 确保不会无限推算，最大认定连续7天
-        if (dayIndex <= 7 || isPeriodToday) {
-            label.innerText = "当前状态";
-            daysEl.innerText = `经期 第 ${dayIndex} 天`;
-            daysEl.style.color = "#ff4d88"; // 变红更好看
-            return;
-        }
+    if (isDateInPeriod(todayStr)) {
+        const dayIndex = getPeriodDayIndexByDate(todayStr) || 1;
+        label.innerText = "当前状态";
+        daysEl.innerText = `经期 第 ${dayIndex} 天`;
+        daysEl.style.color = "#ff4d88";
+        return;
     }
 
-    // --- 如果不在经期中，计算距离下一次还有几天 ---
-    const startDates = getPeriodStartDates();
-    const latestStartStr = startDates[startDates.length - 1];
-    let [sy, sm, sd] = latestStartStr.split('-').map(Number);
-    const latestStart = new Date(sy, sm - 1, sd);
-    latestStart.setHours(0,0,0,0);
+    const startStr = getLatestPeriodStartStr();
+    if (!startStr) {
+        label.innerText = "还没有记录";
+        daysEl.innerText = "-- 天";
+        return;
+    }
 
+    const latestStart = parseDateLocal(startStr);
     const predictedNext = new Date(latestStart);
     predictedNext.setDate(predictedNext.getDate() + 28);
 
     const diffDays = Math.round((predictedNext - today) / 86400000);
 
-    daysEl.style.color = "var(--primary)"; // 恢复默认色
+    daysEl.style.color = "var(--primary)";
     if (diffDays > 0) {
         label.innerText = "距离下一次大约还有";
         daysEl.innerText = `${diffDays} 天`;
@@ -5465,16 +5606,22 @@ function initHomePagerSwipe() {
 }
 
 function getPeriodDayIndex(dateStr) {
-  if (!Array.isArray(SYS_CONF.periodDates) || !SYS_CONF.periodDates.includes(dateStr)) return 0;
-  let day = 1;
-  let d = new Date(dateStr);
-  while (true) {
-    d.setDate(d.getDate() - 1);
-    const prev = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    if (SYS_CONF.periodDates.includes(prev)) day++;
-    else break;
-  }
-  return day;
+    // 如果你已经加了 getPeriodDayIndexByDate，就直接复用
+    if (typeof getPeriodDayIndexByDate === 'function') {
+        return getPeriodDayIndexByDate(dateStr);
+    }
+
+    // 兜底逻辑（防止你还没贴到新函数）
+    if (!isDateInPeriod(dateStr)) return 0;
+
+    const starts = getPeriodStartDates();
+    if (!starts.length) return 0;
+
+    const start = parseDateLocal(starts[starts.length - 1]);
+    const target = parseDateLocal(dateStr);
+
+    const diff = Math.round((target - start) / 86400000);
+    return diff + 1;
 }
 
 function calcPeriodRemainDays() {
