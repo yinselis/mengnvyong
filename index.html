@@ -2241,6 +2241,47 @@ color:#1b140f;"></textarea>
     <div id="model-options" class="custom-select-options"></div>
 </div>
 
+<label>桌面背景（主页）</label>
+<div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+    <button class="btn-outline" type="button" onclick="document.getElementById('bg-home-upload').click()">上传本地图片</button>
+    <button class="btn-outline" type="button" onclick="clearCustomBg('home')">清除</button>
+    <input type="file" id="bg-home-upload" accept="image/*" style="display:none;" onchange="handleCustomBgUpload('home', event)">
+</div>
+<img id="bg-home-preview" style="width:100%; max-height:120px; object-fit:cover; border-radius:12px; display:none; margin-bottom:12px; border:1px solid var(--glass-border);">
+
+<label>字卡背景（词条聊天）</label>
+<div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+    <button class="btn-outline" type="button" onclick="document.getElementById('bg-cards-upload').click()">上传本地图片</button>
+    <button class="btn-outline" type="button" onclick="clearCustomBg('cards')">清除</button>
+    <input type="file" id="bg-cards-upload" accept="image/*" style="display:none;" onchange="handleCustomBgUpload('cards', event)">
+</div>
+<img id="bg-cards-preview" style="width:100%; max-height:120px; object-fit:cover; border-radius:12px; display:none; margin-bottom:12px; border:1px solid var(--glass-border);">
+
+<label>聊天背景（专属聊天室）</label>
+<div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+    <button class="btn-outline" type="button" onclick="document.getElementById('bg-chat-upload').click()">上传本地图片</button>
+    <button class="btn-outline" type="button" onclick="clearCustomBg('chat')">清除</button>
+    <input type="file" id="bg-chat-upload" accept="image/*" style="display:none;" onchange="handleCustomBgUpload('chat', event)">
+</div>
+<img id="bg-chat-preview" style="width:100%; max-height:120px; object-fit:cover; border-radius:12px; display:none; margin-bottom:12px; border:1px solid var(--glass-border);">
+
+<label>全局自定义字体（font-family）</label>
+<input type="text" id="setting-font-family" placeholder="例如: 'MiSans','PingFang SC',sans-serif">
+
+<label>桌面背景（主页）</label>
+<input type="text" id="setting-bg-home" placeholder="支持颜色/渐变/url，如: #12121a 或 linear-gradient(...) 或 ./bg/home.jpg">
+
+<label>字卡背景（词条聊天）</label>
+<input type="text" id="setting-bg-cards" placeholder="例如: ./bg/cards.jpg 或 rgba(20,20,30,.9)">
+
+<label>聊天背景（专属聊天室）</label>
+<input type="text" id="setting-bg-chat" placeholder="例如: ./bg/chat.jpg 或 linear-gradient(...)">
+
+<div style="font-size:12px; color:var(--text-sub); margin:-8px 2px 12px;">
+    路径可填：<code>./bg/xxx.jpg</code>（你放在同目录即可）<br>
+    也支持直接填完整 CSS 背景值（颜色、渐变）。
+</div>
+
 <label>全局自定义 CSS（高级）</label>
 <textarea id="setting-custom-css" rows="8" placeholder="例如：
 body { font-family: 'PingFang SC'; }
@@ -2535,6 +2576,13 @@ req.onupgradeneeded = e => {
     model: 'gpt-4o', 
     modelOptions: [],
     customGlobalCSS: '',
+
+    // ===== 新增：视觉自定义 =====
+    customFontFamily: '',
+    customHomeBg: '',
+    customCardsBg: '',
+    customChatBg: '',
+
     avatarBase64: null, 
     periodDates: [], 
     darkMode: false,
@@ -2545,7 +2593,7 @@ req.onupgradeneeded = e => {
     hairWashes: [],
     poops: [],
     weights: {},
-    sleeps: {}, // ✅ 新增：按日期记录睡眠小时
+    sleeps: {},
     meals: {},
     periodManualEndByStart: {}
 };
@@ -2644,6 +2692,11 @@ renderModelOptions(SYS_CONF.modelOptions || []);
 updateModelSelectLabel();
 document.getElementById('setting-custom-css').value = SYS_CONF.customGlobalCSS || '';
 applyGlobalCustomCSS(SYS_CONF.customGlobalCSS || '');
+document.getElementById('setting-font-family').value = SYS_CONF.customFontFamily || '';
+document.getElementById('setting-bg-home').value = SYS_CONF.customHomeBg || '';
+document.getElementById('setting-bg-cards').value = SYS_CONF.customCardsBg || '';
+document.getElementById('setting-bg-chat').value = SYS_CONF.customChatBg || '';
+applyAdvancedVisualSettings();
 document.getElementById('theme-val').innerText =
     SYS_CONF.theme === 'hongkong' ? '📻 1988港风主题' :
     SYS_CONF.theme === 'custom' ? '🎨 自定义主题' :
@@ -2902,6 +2955,7 @@ if(footerText) footerText.innerText = '';
         if(statusText) statusText.innerText = 'JIANG HUI PRIVATE LINE';
         if(sectionText) sectionText.innerText = '专属桌面';
         if(footerText) footerText.innerText = 'Only for you.';
+        applyAdvancedVisualSettings();
     }
 }
 
@@ -5116,8 +5170,19 @@ SYS_CONF.metaAware = !!document.getElementById('setting-meta-aware')?.checked;
 SYS_CONF.autoAIGen = !!document.getElementById('setting-auto-ai-gen')?.checked;
 SYS_CONF.anniversaryDate = document.getElementById('setting-anniversary').value || '';
 SYS_CONF.customGlobalCSS = document.getElementById('setting-custom-css').value || '';
+SYS_CONF.customFontFamily = document.getElementById('setting-font-family').value.trim();
+
+const bgHomeInput = document.getElementById('setting-bg-home').value.trim();
+const bgCardsInput = document.getElementById('setting-bg-cards').value.trim();
+const bgChatInput = document.getElementById('setting-bg-chat').value.trim();
+
+// 只有文本框有值时才覆盖；为空就保留“上传得到的base64”
+if (bgHomeInput) SYS_CONF.customHomeBg = bgHomeInput;
+if (bgCardsInput) SYS_CONF.customCardsBg = bgCardsInput;
+if (bgChatInput) SYS_CONF.customChatBg = bgChatInput;
 
     applyGlobalCustomCSS(SYS_CONF.customGlobalCSS);
+    applyAdvancedVisualSettings();
 
     AppDB.set('sys', 'config', SYS_CONF).then(() => { 
         updateAnniversaryBox();
@@ -5240,6 +5305,151 @@ function clearGlobalCustomCSS() {
 
 let PRETTY_DIALOG_RESOLVE = null;
 
+function ensureRuntimeStyle(id) {
+    let el = document.getElementById(id);
+    if (!el) {
+        el = document.createElement('style');
+        el.id = id;
+        document.head.appendChild(el);
+    }
+    return el;
+}
+
+function normalizeBgInput(v) {
+    return (v || '').trim();
+}
+
+function parseBgValue(v) {
+    const raw = normalizeBgInput(v);
+    if (!raw) return '';
+
+    // 如果是图片路径/链接，自动转 background:url(...)
+    const isUrlLike =
+        /^https?:\/\//i.test(raw) ||
+        /^data:image\//i.test(raw) ||
+        /^\.{0,2}\//.test(raw) ||
+        /^\/[^/]/.test(raw) ||
+        /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(raw);
+
+    if (isUrlLike) {
+        const safe = raw.replace(/"/g, '\\"');
+        return `url("${safe}") center center / cover no-repeat`;
+    }
+
+    // 否则当成用户直接输入的 CSS 背景值（颜色/渐变等）
+    return raw;
+}
+
+function ensureRuntimeStyle(id) {
+    let el = document.getElementById(id);
+    if (!el) {
+        el = document.createElement('style');
+        el.id = id;
+        document.head.appendChild(el);
+    }
+    return el;
+}
+
+function parseBgValue(v) {
+    const raw = (v || '').trim();
+    if (!raw) return '';
+
+    // base64 或 http 或本地路径 或 图片后缀 -> 视为图片
+    const isImgLike =
+        /^data:image\//i.test(raw) ||
+        /^https?:\/\//i.test(raw) ||
+        /^\.{0,2}\//.test(raw) ||
+        /^\/[^/]/.test(raw) ||
+        /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(raw);
+
+    if (isImgLike) {
+        const safe = raw.replace(/"/g, '\\"');
+        return `url("${safe}") center center / cover no-repeat`;
+    }
+
+    // 其他按CSS背景值（颜色/渐变）直接使用
+    return raw;
+}
+
+function applyAdvancedVisualSettings() {
+    const styleEl = ensureRuntimeStyle('advanced-visual-style');
+
+    const font = (SYS_CONF.customFontFamily || '').trim().replace(/;/g, '');
+    const homeBg = parseBgValue(SYS_CONF.customHomeBg);
+    const cardsBg = parseBgValue(SYS_CONF.customCardsBg);
+    const chatBg = parseBgValue(SYS_CONF.customChatBg);
+
+    styleEl.innerHTML = `
+${font ? `
+body, input, textarea, button, select {
+    font-family: ${font} !important;
+}
+` : ''}
+
+${homeBg ? `
+/* 主页（含主题态） */
+#home,
+#home-page-main,
+#home-page-minus,
+body.theme-pink #home,
+body.theme-hongkong #home,
+body.theme-custom #home,
+body.theme-pink .screen.active#home,
+body.theme-hongkong .screen.active#home,
+body.theme-custom .screen.active#home {
+    background: ${homeBg} !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+` : ''}
+
+${cardsBg ? `
+/* 词条页（含激活态） */
+#app-cards,
+#app-cards.screen.active,
+#app-cards .chat-container,
+#app-cards .content-area {
+    background: ${cardsBg} !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+` : ''}
+
+${chatBg ? `
+/* 聊天页（含激活态） */
+#app-chat,
+#app-chat.screen.active,
+#app-chat .chat-container,
+#app-chat .content-area {
+    background: ${chatBg} !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+` : ''}
+`;
+}
+
+function updateBgPreview(kind, val) {
+    const map = {
+        home: 'bg-home-preview',
+        cards: 'bg-cards-preview',
+        chat: 'bg-chat-preview'
+    };
+    const el = document.getElementById(map[kind]);
+    if (!el) return;
+
+    if (val && /^data:image\//i.test(val)) {
+        el.src = val;
+        el.style.display = 'block';
+    } else {
+        el.src = '';
+        el.style.display = 'none';
+    }
+}
+
 function openPrettyDialog({ mode = 'alert', title = '提示', message = '', defaultValue = '' } = {}) {
     return new Promise((resolve) => {
         PRETTY_DIALOG_RESOLVE = resolve;
@@ -5314,6 +5524,56 @@ function compressImage(file, maxWidth, callback) {
 }
 
     let selectedDateStr = '';
+
+function updateBgPreview(kind, val) {
+    const map = {
+        home: 'bg-home-preview',
+        cards: 'bg-cards-preview',
+        chat: 'bg-chat-preview'
+    };
+    const el = document.getElementById(map[kind]);
+    if (!el) return;
+
+    if (val && /^data:image\//i.test(val)) {
+        el.src = val;
+        el.style.display = 'block';
+    } else {
+        el.src = '';
+        el.style.display = 'none';
+    }
+}
+
+function handleCustomBgUpload(kind, e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    // 压缩到适合手机使用，防止太大卡顿
+    compressImage(file, 1400, async (base64) => {
+        if (kind === 'home') SYS_CONF.customHomeBg = base64;
+        if (kind === 'cards') SYS_CONF.customCardsBg = base64;
+        if (kind === 'chat') SYS_CONF.customChatBg = base64;
+
+        applyAdvancedVisualSettings();
+        updateBgPreview(kind, base64);
+
+        await AppDB.set('sys', 'config', SYS_CONF);
+        uiAlert('背景已上传并应用 ✅');
+    });
+
+    // 清空input，允许重复选同一张图
+    e.target.value = '';
+}
+
+async function clearCustomBg(kind) {
+    if (kind === 'home') SYS_CONF.customHomeBg = '';
+    if (kind === 'cards') SYS_CONF.customCardsBg = '';
+    if (kind === 'chat') SYS_CONF.customChatBg = '';
+
+    applyAdvancedVisualSettings();
+    updateBgPreview(kind, '');
+
+    await AppDB.set('sys', 'config', SYS_CONF);
+}
 
     function updateAnniversaryBox() {
         const box = document.getElementById('anniversary-box');
@@ -6362,6 +6622,77 @@ function initCardFloatSmoothFollow() {
 }
 window.addEventListener('load', initCardFloatSmoothFollow);
 
+/* ===== 最终覆盖：高级视觉设置（放脚本最底部，覆盖前面所有同名函数） ===== */
+function applyAdvancedVisualSettings() {
+    let styleEl = document.getElementById('advanced-visual-style');
+    if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'advanced-visual-style';
+        document.head.appendChild(styleEl);
+    }
+
+    const font = (SYS_CONF.customFontFamily || '').trim().replace(/;/g, '');
+
+    const parseBg = (v) => {
+        const raw = (v || '').trim();
+        if (!raw) return '';
+        const isImgLike =
+            /^data:image\//i.test(raw) ||
+            /^https?:\/\//i.test(raw) ||
+            /^\.{0,2}\//.test(raw) ||
+            /^\/[^/]/.test(raw) ||
+            /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(raw);
+
+        if (isImgLike) {
+            const safe = raw.replace(/"/g, '\\"');
+            return `url("${safe}") center center / cover no-repeat`;
+        }
+        return raw;
+    };
+
+    const homeBg  = parseBg(SYS_CONF.customHomeBg);
+    const cardsBg = parseBg(SYS_CONF.customCardsBg);
+    const chatBg  = parseBg(SYS_CONF.customChatBg);
+
+    styleEl.innerHTML = `
+${font ? `
+body, input, textarea, button, select { font-family: ${font} !important; }
+` : ''}
+
+${homeBg ? `
+#home, #home-page-main, #home-page-minus,
+body.theme-pink #home, body.theme-hongkong #home, body.theme-custom #home {
+    background: ${homeBg} !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+` : ''}
+
+${cardsBg ? `
+#app-cards, #app-cards.screen.active, #app-cards .chat-container, #app-cards .content-area {
+    background: ${cardsBg} !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+` : ''}
+
+${chatBg ? `
+#app-chat, #app-chat.screen.active, #app-chat .chat-container, #app-chat .content-area {
+    background: ${chatBg} !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+` : ''}
+`;
+}
+
+/* ===== 关闭背景预览（减少卡顿） ===== */
+function updateBgPreview(kind, val) {
+    // no-op: 禁用预览，避免大图base64重复渲染导致卡顿
+}
 </script>
 
 <div id="daily-modal" class="modal-overlay">
