@@ -357,6 +357,7 @@
         .dot-meal { background: #ffba00; }
         .dot-poop { background: #8b5a2b; }
         .dot-weight { background: #34c759; }
+        .dot-sleep { background: #7b68ee; }
         .cal-cell:active { transform: scale(0.9); }
         .cal-cell.empty { background: transparent; cursor: default; }
         .cal-cell.period { background: #ff4d4d; color: #fff; box-shadow: 0 2px 8px rgba(255,77,77,0.4); font-weight: bold; }
@@ -1652,6 +1653,59 @@ body.theme-custom .screen.active {
     margin-bottom:8px;
 }
 
+/* ===== 睡眠时间输入（全主题自适应） ===== */
+.sleep-time-row{
+    display:flex;
+    gap:10px;
+    margin-bottom:10px;
+}
+.sleep-time-item{ flex:1; }
+
+.sleep-time-label{
+    font-size:12px;
+    color:var(--text-sub);
+    margin-bottom:6px;
+    display:block;
+}
+
+.sleep-time-input{
+    width:100%;
+    height:42px;
+    border-radius:12px;
+    border:1px solid var(--glass-border);
+    background: color-mix(in srgb, var(--glass-bg) 82%, transparent);
+    color:var(--text-main);
+    padding:0 12px;
+    font-size:14px;
+    outline:none;
+    box-sizing:border-box;
+}
+
+.sleep-time-input:focus{
+    border-color:var(--primary);
+    box-shadow:0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+/* 时间选择器图标尽量跟主题走 */
+.sleep-time-input::-webkit-calendar-picker-indicator{
+    opacity:.78;
+    cursor:pointer;
+    filter: grayscale(.15);
+}
+
+.sleep-hours-pill{
+    font-size:13px;
+    color:var(--text-main);
+    background: color-mix(in srgb, var(--glass-bg) 78%, transparent);
+    border:1px solid var(--glass-border);
+    border-radius:10px;
+    padding:8px 10px;
+    margin-bottom:10px;
+}
+.sleep-hours-pill b{
+    color:var(--primary);
+}
+
     </style>
 </head>
 <body>
@@ -2452,8 +2506,9 @@ req.onupgradeneeded = e => {
     hairWashes: [],
     poops: [],
     weights: {},
+    sleeps: {}, // ✅ 新增：按日期记录睡眠小时
     meals: {},
-    periodManualEndByStart: {} // 新增：按“经期开头日期”记录手动结束日期
+    periodManualEndByStart: {}
 };
     let CARD_CONF = {
         minDelay: 2,
@@ -2536,6 +2591,7 @@ const BUILTIN_APPEARANCE_IDS = ['ap_hk_gold', 'ap_neon_night', 'ap_matcha'];
         if (savedConf) SYS_CONF = { ...SYS_CONF, ...savedConf };
         if (!SYS_CONF.periodDates) SYS_CONF.periodDates =[];
 if (!SYS_CONF.periodManualEndByStart) SYS_CONF.periodManualEndByStart = {};
+if (!SYS_CONF.sleeps) SYS_CONF.sleeps = {};
         document.getElementById('setting-dark-mode').checked = !!SYS_CONF.darkMode;
 document.getElementById('setting-meta-aware').checked = !!SYS_CONF.metaAware;
 document.getElementById('setting-auto-ai-gen').checked = SYS_CONF.autoAIGen !== false;
@@ -4701,13 +4757,13 @@ function renderCalendar(y, m) {
     for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
 
-        // 统一走新逻辑（含手动结束）
         const isPeriod = isDateInPeriod(dateStr);
         const isPredict = predictedDates.includes(dateStr) && !isPeriod;
 
         const hasHair = SYS_CONF.hairWashes && SYS_CONF.hairWashes.includes(dateStr);
         const hasPoop = SYS_CONF.poops && SYS_CONF.poops.includes(dateStr);
-        const hasWeight = SYS_CONF.weights && SYS_CONF.weights[dateStr];
+        const hasWeight = SYS_CONF.weights && SYS_CONF.weights[dateStr] !== undefined;
+        const hasSleep = SYS_CONF.sleeps && SYS_CONF.sleeps[dateStr] !== undefined; // ✅ 新增
         const hasMeal = SYS_CONF.meals && SYS_CONF.meals[dateStr] && SYS_CONF.meals[dateStr].length > 0;
 
         let dots = '';
@@ -4715,6 +4771,7 @@ function renderCalendar(y, m) {
         if (hasMeal) dots += `<span class="mini-dot dot-meal"></span>`;
         if (hasPoop) dots += `<span class="mini-dot dot-poop"></span>`;
         if (hasWeight) dots += `<span class="mini-dot dot-weight"></span>`;
+        if (hasSleep) dots += `<span class="mini-dot dot-sleep"></span>`; // ✅ 新增
 
         grid.innerHTML += `
             <div class="cal-cell ${isPeriod ? 'period' : ''} ${isPredict ? 'predict' : ''}" onclick="openDailyModal('${dateStr}')">
@@ -5226,47 +5283,69 @@ function compressImage(file, maxWidth, callback) {
         document.getElementById('daily-modal').style.display = 'none';
     }
 
-    function updateDailyModalUI() {
-        const hairBtn = document.getElementById('btn-hair-toggle');
-        const poopBtn = document.getElementById('btn-poop-toggle');
-        const weightInput = document.getElementById('selected-weight');
+function updateDailyModalUI() {
+    const hairBtn = document.getElementById('btn-hair-toggle');
+    const poopBtn = document.getElementById('btn-poop-toggle');
+    const weightInput = document.getElementById('selected-weight');
 
-        if (hairBtn) {
-            hairBtn.innerText = SYS_CONF.hairWashes.includes(selectedDateStr) ? '今天已洗头 ✓' : '今天没洗头';
-        }
+    const sleepBedInput = document.getElementById('selected-sleep-bed');
+    const sleepWakeInput = document.getElementById('selected-sleep-wake');
+    const sleepHoursText = document.getElementById('selected-sleep-hours');
 
-        if (poopBtn) {
-            poopBtn.innerText = SYS_CONF.poops.includes(selectedDateStr) ? '今天已嗯嗯 ✓' : '今天没嗯嗯';
-        }
+    if (hairBtn) {
+        hairBtn.innerText = SYS_CONF.hairWashes.includes(selectedDateStr) ? '今天已洗头 ✓' : '今天没洗头';
+    }
 
-        if (weightInput) {
-            weightInput.value = SYS_CONF.weights[selectedDateStr] || '';
-        }
+    if (poopBtn) {
+        poopBtn.innerText = SYS_CONF.poops.includes(selectedDateStr) ? '今天已嗯嗯 ✓' : '今天没嗯嗯';
+    }
 
-        const meals = SYS_CONF.meals[selectedDateStr] || [];
+    if (weightInput) {
+        weightInput.value = SYS_CONF.weights[selectedDateStr] || '';
+    }
 
-        const breakfastBtn = document.getElementById('btn-meal-breakfast');
-        const lunchBtn = document.getElementById('btn-meal-lunch');
-        const dinnerBtn = document.getElementById('btn-meal-dinner');
-
-        if (breakfastBtn) {
-            breakfastBtn.innerText = meals.includes('早餐') ? '早餐 ✓' : '早餐';
-            breakfastBtn.style.background = meals.includes('早餐') ? 'var(--primary)' : 'transparent';
-            breakfastBtn.style.color = meals.includes('早餐') ? '#fff' : 'var(--primary)';
-        }
-
-        if (lunchBtn) {
-            lunchBtn.innerText = meals.includes('中餐') ? '中餐 ✓' : '中餐';
-            lunchBtn.style.background = meals.includes('中餐') ? 'var(--primary)' : 'transparent';
-            lunchBtn.style.color = meals.includes('中餐') ? '#fff' : 'var(--primary)';
-        }
-
-        if (dinnerBtn) {
-            dinnerBtn.innerText = meals.includes('晚餐') ? '晚餐 ✓' : '晚餐';
-            dinnerBtn.style.background = meals.includes('晚餐') ? 'var(--primary)' : 'transparent';
-            dinnerBtn.style.color = meals.includes('晚餐') ? '#fff' : 'var(--primary)';
+    // 睡眠回填（兼容旧数据：数字）
+    const s = SYS_CONF.sleeps?.[selectedDateStr];
+    if (sleepBedInput && sleepWakeInput && sleepHoursText) {
+        if (s && typeof s === 'object') {
+            sleepBedInput.value = s.bed || '';
+            sleepWakeInput.value = s.wake || '';
+            sleepHoursText.innerText = (s.hours !== undefined && s.hours !== null) ? `${s.hours} 小时` : '--';
+        } else if (typeof s === 'number') {
+            sleepBedInput.value = '';
+            sleepWakeInput.value = '';
+            sleepHoursText.innerText = `${s} 小时`;
+        } else {
+            sleepBedInput.value = '';
+            sleepWakeInput.value = '';
+            sleepHoursText.innerText = '--';
         }
     }
+
+    const meals = SYS_CONF.meals[selectedDateStr] || [];
+
+    const breakfastBtn = document.getElementById('btn-meal-breakfast');
+    const lunchBtn = document.getElementById('btn-meal-lunch');
+    const dinnerBtn = document.getElementById('btn-meal-dinner');
+
+    if (breakfastBtn) {
+        breakfastBtn.innerText = meals.includes('早餐') ? '早餐 ✓' : '早餐';
+        breakfastBtn.style.background = meals.includes('早餐') ? 'var(--primary)' : 'transparent';
+        breakfastBtn.style.color = meals.includes('早餐') ? '#fff' : 'var(--primary)';
+    }
+
+    if (lunchBtn) {
+        lunchBtn.innerText = meals.includes('中餐') ? '中餐 ✓' : '中餐';
+        lunchBtn.style.background = meals.includes('中餐') ? 'var(--primary)' : 'transparent';
+        lunchBtn.style.color = meals.includes('中餐') ? '#fff' : 'var(--primary)';
+    }
+
+    if (dinnerBtn) {
+        dinnerBtn.innerText = meals.includes('晚餐') ? '晚餐 ✓' : '晚餐';
+        dinnerBtn.style.background = meals.includes('晚餐') ? 'var(--primary)' : 'transparent';
+        dinnerBtn.style.color = meals.includes('晚餐') ? '#fff' : 'var(--primary)';
+    }
+}
 
     function toggleHairForSelectedDate() {
         const i = SYS_CONF.hairWashes.indexOf(selectedDateStr);
@@ -5311,6 +5390,86 @@ function compressImage(file, maxWidth, callback) {
         closeDailyModal();
     }
     
+    function saveSleepForSelectedDate() {
+    const val = document.getElementById('selected-sleep').value.trim();
+
+    if (val === '') {
+        delete SYS_CONF.sleeps[selectedDateStr];
+    } else {
+        const n = parseFloat(val);
+        if (isNaN(n) || n < 0 || n > 24) return alert('睡眠时长请填 0~24 小时');
+        SYS_CONF.sleeps[selectedDateStr] = Number(n.toFixed(1));
+    }
+
+    AppDB.set('sys', 'config', SYS_CONF);
+    updateDailyModalUI();
+    initCalendar();
+    renderMinusDashboard();
+}
+
+function parseTimeToMinutes(t) {
+    if (!t || !t.includes(':')) return null;
+    const [h, m] = t.split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+}
+
+function calcSleepHoursByTimes(bedTime, wakeTime) {
+    const bed = parseTimeToMinutes(bedTime);
+    const wake = parseTimeToMinutes(wakeTime);
+    if (bed === null || wake === null) return null;
+
+    let diff = wake - bed;
+    // 跨夜：比如 23:40 -> 07:20
+    if (diff <= 0) diff += 24 * 60;
+
+    return Number((diff / 60).toFixed(1));
+}
+
+function previewSleepDuration() {
+    const bedInput = document.getElementById('selected-sleep-bed');
+    const wakeInput = document.getElementById('selected-sleep-wake');
+    const txt = document.getElementById('selected-sleep-hours');
+    if (!bedInput || !wakeInput || !txt) return;
+
+    const hours = calcSleepHoursByTimes(bedInput.value, wakeInput.value);
+    txt.innerText = (hours === null) ? '--' : `${hours} 小时`;
+}
+
+function saveSleepForSelectedDate() {
+    const bedInput = document.getElementById('selected-sleep-bed');
+    const wakeInput = document.getElementById('selected-sleep-wake');
+    const bed = (bedInput?.value || '').trim();
+    const wake = (wakeInput?.value || '').trim();
+
+    // 两个都空 = 删除当天睡眠记录
+    if (!bed && !wake) {
+        delete SYS_CONF.sleeps[selectedDateStr];
+        AppDB.set('sys', 'config', SYS_CONF);
+        updateDailyModalUI();
+        initCalendar();
+        renderMinusDashboard();
+        return;
+    }
+
+    if (!bed || !wake) return alert('请把入睡和醒来时间都填上哦');
+
+    const hours = calcSleepHoursByTimes(bed, wake);
+    if (hours === null || hours <= 0 || hours > 24) return alert('时间不合法，请检查');
+
+    // 存对象（含原始时间 + 自动时长）
+    SYS_CONF.sleeps[selectedDateStr] = {
+        bed,
+        wake,
+        hours
+    };
+
+    AppDB.set('sys', 'config', SYS_CONF);
+    updateDailyModalUI();
+    initCalendar();
+    renderMinusDashboard();
+}
+
 /* ===== 每日情绪打卡（极简+修正） ===== */
 let CURRENT_MOOD_TAG = '';
 
@@ -6130,6 +6289,27 @@ async function importBackupFromFileInput(e) {
                 <button class="btn-main" onclick="saveWeightForSelectedDate()">保存</button>
             </div>
         </div>
+<div class="card">
+    <label>睡眠记录（自动计算）</label>
+
+    <div class="sleep-time-row">
+        <div class="sleep-time-item">
+            <span class="sleep-time-label">入睡</span>
+            <input type="time" id="selected-sleep-bed" class="sleep-time-input" onchange="previewSleepDuration()">
+        </div>
+        <div class="sleep-time-item">
+            <span class="sleep-time-label">醒来</span>
+            <input type="time" id="selected-sleep-wake" class="sleep-time-input" onchange="previewSleepDuration()">
+        </div>
+    </div>
+
+    <div class="sleep-hours-pill">
+        自动时长：<b id="selected-sleep-hours">--</b>
+        <span style="opacity:.75;">（跨夜自动算）</span>
+    </div>
+
+    <button class="btn-main" onclick="saveSleepForSelectedDate()">保存</button>
+</div>
     </div>
 </div>
 
