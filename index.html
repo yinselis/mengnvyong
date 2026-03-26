@@ -1706,6 +1706,33 @@ body.theme-custom .screen.active {
     color:var(--primary);
 }
 
+/* ===== 字卡设置：悬浮保存返回键 ===== */
+#card-settings-modal .card-float-round{
+    position: absolute !important;
+    right: 14px;
+    top: 0; /* JS 控制 translateY */
+    z-index: 2000;
+
+    width: 54px;
+    height: 54px;
+    border: none;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(0,0,0,.22);
+    cursor: pointer;
+
+    transform: translate3d(0, 120px, 0);
+    will-change: transform;
+}
+#card-settings-modal .card-float-round svg{
+    width:22px;height:22px;stroke:#fff;stroke-width:2.6;fill:none;
+}
+
     </style>
 </head>
 <body>
@@ -1834,13 +1861,23 @@ body.theme-custom .screen.active {
 
     <!-- 全屏配置抽屉 -->
     <div id="card-settings-modal" class="modal-overlay">
-        <div class="modal-content">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h3 style="margin:0; font-size:22px;">词库与参数设置</h3>
-                <div onclick="document.getElementById('card-settings-modal').style.display='none'" style="cursor:pointer; color:var(--text-sub); font-size:36px; line-height:1; font-weight:300;">×</div>
-            </div>
-            
-            <div style="display:flex; flex-direction:column; gap:25px; flex:1;">
+    <div class="modal-content">
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="margin:0; font-size:22px;">词库与参数设置</h3>
+            <div onclick="document.getElementById('card-settings-modal').style.display='none'" style="cursor:pointer; color:var(--text-sub); font-size:36px; line-height:1; font-weight:300;">×</div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+            <button class="card-float-round" onclick="saveCardSettings()" title="保存并返回" aria-label="保存并返回">
+                <svg viewBox="0 0 24 24">
+                    <path d="M15 18l-6-6 6-6"></path>
+                </svg>
+            </button>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:25px;">
+            <!-- 你后面的模块内容从这里继续 -->
                 <!-- 模块1：选择夹子 -->
                 <div>
                     <h4 style="font-size:14px; margin:0 0 10px; color:var(--primary);">当前聊天的夹子</h4>
@@ -1939,7 +1976,7 @@ color:#1b140f;"></textarea>
                 </div>
 
                 <!-- 模块2：建夹加词与列表区（利用flex撑满中间所有空白） -->
-                <div style="display:flex; flex-direction:column; flex:1; min-height:220px;">
+                <div style="display:flex; flex-direction:column; min-height:220px;">
                     <h4 style="font-size:14px; margin:0 0 10px; color:var(--primary);">新建与批量加词</h4>
                     <div style="display:flex;gap:10px; margin-bottom:10px;">
                         <input type="text" id="new-folder-name" placeholder="输入新夹子名..." style="margin:0;">
@@ -2012,7 +2049,9 @@ color:#1b140f;"></textarea>
 </div>
             </div>
 
-            <button class="btn-main" style="margin-top:25px; flex-shrink:0; padding:15px 0; font-size:16px;" onclick="saveCardSettings()">💾 保存参数并返回</button>
+            <div style="margin-top:18px; padding-bottom:14px;">
+    <button class="btn-main" type="button" onclick="saveCardSettings()">💾 保存参数并返回</button>
+</div>
         </div>
     </div>
 </div>
@@ -2692,28 +2731,55 @@ function normalizeBubbleCSS(input) {
     return css;
 }
 
-    function setCardBubbleStyle(aiCssRaw, userCssRaw) {
-        const styleId = 'card-folder-bubble-style';
-        let style = document.getElementById(styleId);
-        if (!style) {
-            style = document.createElement('style');
-            style.id = styleId;
-            document.head.appendChild(style);
-        }
+function setCardBubbleStyle(aiCssRaw, userCssRaw) {
+    const styleId = 'card-folder-bubble-style';
+    let style = document.getElementById(styleId);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = styleId; // ✅ 修复
+        document.head.appendChild(style);
+    }
 
-        const aiCss = normalizeBubbleCSS(aiCssRaw);
-        const userCss = normalizeBubbleCSS(userCssRaw);
+    let aiCss = normalizeBubbleCSS(aiCssRaw);
+    let userCss = normalizeBubbleCSS(userCssRaw);
 
-        if (!aiCss && !userCss) {
-            style.innerHTML = '';
-            return;
-        }
-
-        style.innerHTML = `
-#card-chat-box .msg.ai { ${aiCss} }
-#card-chat-box .msg.user { ${userCss} }
+    if (!aiCss) {
+        aiCss = `
+            background: #fff;
+            color: var(--text-main);
+            border-radius: 14px;
+            padding: 12px 16px;
         `;
     }
+    if (!userCss) {
+        userCss = `
+            background: linear-gradient(135deg,var(--primary),var(--primary-light));
+            color: #fff;
+            border-radius: 14px;
+            padding: 12px 16px;
+        `;
+    }
+
+    aiCss = toImportantCSS(aiCss);
+    userCss = toImportantCSS(userCss);
+
+style.innerHTML = `
+body.theme-custom #card-chat-box .msg.ai { ${aiCss}; }
+body #card-chat-box .msg.ai { ${aiCss}; }
+
+body.theme-custom #card-chat-box .msg.user { ${userCss}; }
+body #card-chat-box .msg.user { ${userCss}; }
+`;
+}
+
+function toImportantCSS(cssText = '') {
+    return String(cssText)
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(s => s.includes('!important') ? s : `${s} !important`)
+        .join('; ');
+}
 
 function updateBubblePreviewBox() {
     const aiBubble = document.getElementById('bubble-preview-ai');
@@ -6249,10 +6315,58 @@ async function importBackupFromFileInput(e) {
     }
 }
 
+
+function initCardFloatSmoothFollow() {
+    const modal = document.getElementById('card-settings-modal');
+    if (!modal) return;
+    const content = modal.querySelector('.modal-content');
+    const btn = modal.querySelector('.card-float-round');
+    if (!content || !btn) return;
+
+    let targetY = 120;
+    let currentY = 120;
+    let rafId = 0;
+
+    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+    function calcTarget() {
+        // 让按钮始终在当前可视区右下附近
+        const y = content.scrollTop + content.clientHeight - 84;
+        targetY = clamp(y, 90, content.scrollHeight - 70);
+        if (!rafId) rafId = requestAnimationFrame(tick);
+    }
+
+    function tick() {
+        // 平滑跟随，避免“抖”
+        currentY += (targetY - currentY) * 0.22;
+        if (Math.abs(targetY - currentY) < 0.5) currentY = targetY;
+
+        btn.style.transform = `translate3d(0, ${currentY}px, 0)`;
+
+        if (Math.abs(targetY - currentY) >= 0.5) {
+            rafId = requestAnimationFrame(tick);
+        } else {
+            rafId = 0;
+        }
+    }
+
+    // 滚动时只更新目标，不直接改样式
+    content.addEventListener('scroll', calcTarget, { passive: true });
+    window.addEventListener('resize', calcTarget);
+
+    // 打开设置面板时重算
+    const openBtn = document.querySelector('#app-cards .app-header [onclick*="card-settings-modal"]');
+    if (openBtn) openBtn.addEventListener('click', () => setTimeout(calcTarget, 30));
+
+    calcTarget();
+}
+window.addEventListener('load', initCardFloatSmoothFollow);
+
 </script>
 
 <div id="daily-modal" class="modal-overlay">
     <div class="modal-content">
+    
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <h3 id="daily-modal-title" style="margin:0; font-size:22px;">日期记录</h3>
             <div onclick="closeDailyModal()" style="cursor:pointer; color:var(--text-sub); font-size:36px; line-height:1; font-weight:300;">×</div>
@@ -6354,6 +6468,5 @@ async function importBackupFromFileInput(e) {
         });
     }
 </script>
-</body>
 </body>
 </html>
