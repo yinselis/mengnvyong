@@ -5461,32 +5461,89 @@ function openPrettyDialog({ mode = 'alert', title = '提示', message = '', defa
         const okBtn = document.getElementById('pretty-dialog-ok');
         const cancelBtn = document.getElementById('pretty-dialog-cancel');
 
+        if (!overlay || !titleEl || !msgEl || !inputEl || !okBtn || !cancelBtn) {
+            // 兜底，避免组件缺失时卡死
+            if (mode === 'confirm') return resolve(window.confirm(message || title || '请确认'));
+            if (mode === 'prompt') return resolve(window.prompt(message || title || '请输入', defaultValue || ''));
+            window.alert(message || title || '提示');
+            return resolve(undefined);
+        }
+
         titleEl.innerText = title || '提示';
         msgEl.innerText = message || '';
 
+        // 模式切换
         inputEl.style.display = mode === 'prompt' ? 'block' : 'none';
         cancelBtn.style.display = (mode === 'confirm' || mode === 'prompt') ? 'inline-block' : 'none';
 
         if (mode === 'prompt') {
             inputEl.value = defaultValue || '';
-            setTimeout(() => inputEl.focus(), 30);
+        } else {
+            inputEl.value = '';
         }
+
+        // 防止按钮在某些 WebView 被当 submit
+        okBtn.setAttribute('type', 'button');
+        cancelBtn.setAttribute('type', 'button');
+
+        // 先清旧监听（避免叠加）
+        okBtn.onclick = null;
+        cancelBtn.onclick = null;
+        overlay.onclick = null;
+        inputEl.onkeydown = null;
+
+        function closeWith(val) {
+            overlay.style.display = 'none';
+            PRETTY_DIALOG_RESOLVE = null;
+            resolve(val);
+        }
+
+        okBtn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+
+            if (mode === 'confirm') return closeWith(true);
+            if (mode === 'prompt') return closeWith(inputEl.value);
+            return closeWith(undefined);
+        };
+
+        cancelBtn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+
+            if (mode === 'confirm') return closeWith(false);
+            if (mode === 'prompt') return closeWith(null);
+            return closeWith(undefined);
+        };
+
+        // 点击遮罩：confirm/prompt 视为取消；alert 可关闭
+        overlay.onclick = function (ev) {
+            if (ev.target !== overlay) return;
+            if (mode === 'confirm') return closeWith(false);
+            if (mode === 'prompt') return closeWith(null);
+            return closeWith(undefined);
+        };
+
+        // 回车/ESC 快捷
+        inputEl.onkeydown = function (ev) {
+            if (mode !== 'prompt') return;
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                okBtn.click();
+            } else if (ev.key === 'Escape') {
+                ev.preventDefault();
+                cancelBtn.click();
+            }
+        };
 
         overlay.style.display = 'flex';
 
-        okBtn.onclick = () => {
-            overlay.style.display = 'none';
-            if (mode === 'confirm') return PRETTY_DIALOG_RESOLVE(true);
-            if (mode === 'prompt') return PRETTY_DIALOG_RESOLVE(inputEl.value);
-            return PRETTY_DIALOG_RESOLVE(undefined);
-        };
-
-        cancelBtn.onclick = () => {
-            overlay.style.display = 'none';
-            if (mode === 'confirm') return PRETTY_DIALOG_RESOLVE(false);
-            if (mode === 'prompt') return PRETTY_DIALOG_RESOLVE(null);
-            return PRETTY_DIALOG_RESOLVE(undefined);
-        };
+        if (mode === 'prompt') {
+            setTimeout(() => {
+                inputEl.focus();
+                try { inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length); } catch(_) {}
+            }, 30);
+        }
     });
 }
 
@@ -6765,8 +6822,8 @@ function updateBgPreview(kind, val) {
         <div id="pretty-dialog-message" class="pretty-dialog-body"></div>
         <input id="pretty-dialog-input" class="pretty-dialog-input" type="text" style="display:none;" />
         <div class="pretty-dialog-actions">
-            <button id="pretty-dialog-cancel" class="pretty-dialog-btn" style="display:none;">取消</button>
-            <button id="pretty-dialog-ok" class="pretty-dialog-btn primary">确定</button>
+<button id="pretty-dialog-cancel" type="button" class="pretty-dialog-btn" style="display:none;">取消</button>
+<button id="pretty-dialog-ok" type="button" class="pretty-dialog-btn primary">确定</button>
         </div>
     </div>
 </div>
